@@ -86,8 +86,22 @@ void onMessageCallback(WebsocketsMessage message)
 
     // Suppress VAD while the assistant is speaking and briefly after each chunk
     // to reduce echo/retrigger loops.
-    vadSuppressForMs(900);
-    speaker_write_mono_i16(pcm, frames);
+    vadSuppressForMs(2000);
+    //speaker_write_mono_i16(pcm, frames);
+
+      uint32_t t0 = millis();
+      bool ok = speaker_write_mono_i16(pcm, frames, 20);
+      uint32_t dt = millis() - t0;
+
+      if (dt > 80 || !ok)
+      {
+        Serial.printf("[SPK RX] frames=%u writeMs=%lu ok=%d heap=%u\n",
+                      (unsigned int)frames,
+                      (unsigned long)dt,
+                      ok ? 1 : 0,
+                      ESP.getFreeHeap());
+      }
+
     return;
   }
 

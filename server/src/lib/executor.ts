@@ -30,7 +30,8 @@ class VoiceToolExecutor {
                 this.triggerPromise = null;
                 this.triggerResolve = null;
             } else {
-                throw new Error("Tool call adding already in progress");
+                console.warn("[TOOL EXECUTOR] Tool call already in progress; ignoring duplicate.");
+            return;
             }
         })();
 

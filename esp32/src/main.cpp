@@ -12,8 +12,9 @@
 #include <LittleFS.h>
 #include "FS.h"
 #include "TCA9554.h"
-#include "esp_heap_caps.h"
 
+//debug
+#include "esp_heap_caps.h"
 #include <esp_system.h>
 #include <esp_mac.h>
 
@@ -82,6 +83,34 @@ Arduino_GFX *gfx = new Arduino_ST7796(
 );
 
 
+static const char* resetReasonName(esp_reset_reason_t reason)
+{
+  switch (reason)
+  {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SOFTWARE";
+    case ESP_RST_PANIC:     return "PANIC_EXCEPTION";
+    case ESP_RST_INT_WDT:   return "INTERRUPT_WATCHDOG";
+    case ESP_RST_TASK_WDT:  return "TASK_WATCHDOG";
+    case ESP_RST_WDT:       return "OTHER_WATCHDOG";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+  }
+}
+
+void printResetInfo()
+{
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  Serial.printf("[RESET] reason=%d %s\n", (int)reason, resetReasonName(reason));
+  Serial.printf("[HEAP] free=%u largest=%u psramFree=%u\n",
+                ESP.getFreeHeap(),
+                heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                ESP.getFreePsram());
+}
 
 bool initFS() {
   if (!LittleFS.begin(true)) {
@@ -177,14 +206,15 @@ void setup()
   Serial.begin(115200);
   delay(3000); // Give time for serial monitor to connect
   //printPsramInfo();
-  Serial.println("ESP32 Serial (UART0) initialized");
+  printResetInfo();
+  //Serial.println("ESP32 Serial (UART0) initialized");
   MiPSerial.begin(115200, SERIAL_8N1, MIP_RX_PIN, MIP_TX_PIN);
   MyMiP.init(); // Serial port is configured for 115200
 
 
 
   Serial.println("MiP is Alive!!!");
-  delay(100); // Need a delay to let the MiP serial buffer clear.
+  delay(200); // Need a delay to let the MiP serial buffer clear.
       MyMiP.setChestLED(255, 0, 0);
     delay(200);
           MyMiP.setChestLED(255, 0, 0);

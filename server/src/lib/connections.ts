@@ -4,6 +4,10 @@ import WebSocket from "ws";
 
 const DEFAULT_MODEL = "gpt-realtime";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
+//const DEFAULT_MODEL = "gpt-realtime-2";
+//const DEFAULT_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime-2";
+
+
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
     sampleRate: 24000,  // ESP32 default sample rate
     channels: 1,        // Mono audio

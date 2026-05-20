@@ -1,6 +1,8 @@
 import { WebSocket } from "ws";
 import { EventEmitter } from "events";
 
+const robotEvents = new EventEmitter();
+
 type RobotState = {
   // Server-side transport state: can the server currently send commands to the ESP32?
   transport_connected: boolean;
@@ -28,7 +30,6 @@ type RobotState = {
 };
 
 
-const robotEvents = new EventEmitter();
 
 type RobotSensorEvent = {
   kind: "radar" | "position";
@@ -44,10 +45,16 @@ const SENSOR_INJECT_COOLDOWN_MS = 1500; // Minimum time between injected sensor 
 export function onRobotSensorEvent(
   listener: (event: RobotSensorEvent) => void
 ) {
-  robotEvents.on("sensor", listener);
-  return () => robotEvents.off("sensor", listener);
-}
+  // MiP has one active robot session. Prevent old/reconnected agents from
+  // stacking listeners and causing duplicate conversation injections.
+  robotEvents.removeAllListeners("sensor");
 
+  robotEvents.on("sensor", listener);
+
+  return () => {
+    robotEvents.off("sensor", listener);
+  };
+}
 
 
 let currentDeviceSocket: WebSocket | null = null;
@@ -245,7 +252,9 @@ export function updateRobotStateFromMessage(message: unknown, sourceSocket?: Web
   if (!allowsSensorInjection(robotState)) {
     return;
   }
-
+  if (robotState.lastEvent === "action_done") {
+    robotEvents.emit("action_done", robotState);
+  }
   // Do not inject routine heartbeat/status noise.
   if (eventName === "periodic") return;
 
@@ -316,6 +325,77 @@ export function getRobotState() {
   };
 }
 
+
+function commandShouldWaitForAction(command: Record<string, unknown>): boolean {
+  const name = String(command.command ?? "");
+
+  // Wait for physical/body actions.
+  return [
+    "stand_up",
+    "set_position",
+    "move_forward",
+    "move_backward",
+    "drive_distance",
+    "turn_left",
+    "turn_right",
+    "spin",
+    "continuous_drive",
+    "crazy_drive",
+    "game_mode",
+    "expression_preset",
+    "sound",
+    "sound_sequence",
+    "chest_led",
+    "flash_chest_led",
+    "head_leds",
+  ].includes(name);
+}
+
+function waitForActionDone(timeoutMs = 12000): Promise<string> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+
+    const timeout = setTimeout(() => {
+      robotEvents.off("action_done", onDone);
+      resolve(`Action wait timed out after ${timeoutMs} ms.`);
+    }, timeoutMs);
+
+    const onDone = () => {
+      clearTimeout(timeout);
+      robotEvents.off("action_done", onDone);
+
+      const elapsed = Date.now() - startedAt;
+      resolve(`Action completed after ${elapsed} ms.`);
+    };
+
+    robotEvents.on("action_done", onDone);
+  });
+}
+
+export async function sendMipCommand(command: Record<string, unknown>) {
+  if (!isRobotConnected() || !currentDeviceSocket) {
+    console.warn("[MIP TOOL] Robot WebSocket is not connected");
+    return "MiP robot is not connected.";
+  }
+
+  const payload = {
+    type: "mip_command",
+    ...command,
+  };
+
+  const json = JSON.stringify(payload);
+  console.log("[MIP TOOL] TX", json);
+  currentDeviceSocket.send(json);
+
+  if (!commandShouldWaitForAction(command)) {
+    return `Sent MiP command: ${String(command.command ?? "unknown")}`;
+  }
+
+  const result = await waitForActionDone(15000);
+
+  return `MiP command ${String(command.command ?? "unknown")} finished. ${result}`;
+}
+/*
 export function sendMipCommand(command: Record<string, unknown>) {
   if (!isRobotConnected() || !currentDeviceSocket) {
     console.warn("[MIP TOOL] Robot transport is not connected");
@@ -333,3 +413,4 @@ export function sendMipCommand(command: Record<string, unknown>) {
 
   return `Sent MiP command: ${String(command.command ?? "unknown")}`;
 }
+*/

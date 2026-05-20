@@ -69,7 +69,18 @@ app.get(
           bitDepth: 16,
         },
       });
-
+      /*
+    const agent = new OpenAIVoiceReactAgent({
+      instructions: INSTRUCTIONS,
+      tools: TOOLS,
+      model: "gpt-realtime-2",
+      audioConfig: {
+        sampleRate: 24000,
+        channels: 1,
+        bitDepth: 16,
+      },
+    });
+      */
       try {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         await agent.connect(rawWs, sendOutputToThisRobot);

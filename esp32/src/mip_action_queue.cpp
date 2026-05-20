@@ -2,6 +2,7 @@
 
 #include "MiP_commands.h"
 #include "robot_status.h"
+#include "vad_controller.h"
 
 extern MiP MyMiP;
 
@@ -354,10 +355,14 @@ static void mipActionTask(void* parameter)
       Serial.print("[MIP ACTION START] ");
       Serial.println(stateName);
       setRobotActionState(stateName);
+      vadSuppressForMs(1000);
       requestRobotStatePublish("action_start");
 
       runMipAction(action);
 
+      // Suppress VAD briefly after action completion so motor noise, balancing,
+      // or mechanical settling does not immediately retrigger recording.
+      vadSuppressForMs(1200);
       setRobotActionState("idle");
       requestRobotStatePublish("action_done");
       Serial.println("[MIP ACTION DONE]");

@@ -70,6 +70,10 @@ export class OpenAIVoiceReactAgent {
     private audioChunkCount: number = 0;
     private recordingStartedAtMs: number | null = null;
 
+    private lastSensorInjectionKey = "";
+    private lastSensorInjectionAtMs = 0;
+    private responseActive = false;
+    private pendingSensorResponse: string | null = null;
     private unsubscribeRobotSensorEvent?: () => void;
     private lastSensorResponseAtMs = 0;
 
@@ -214,19 +218,40 @@ export class OpenAIVoiceReactAgent {
     }
 
     private setupRobotSensorInjection(): void {
+        
     if (this.unsubscribeRobotSensorEvent) return;
 
     this.unsubscribeRobotSensorEvent = onRobotSensorEvent((event) => {
+
+
+
+        const state = event.state;
+
+        const eventKey =
+        event.kind === "radar"
+            ? `radar:${state.ir_blocked}:${state.radar_code}:${state.radar}`
+            : `position:${state.mip_position_code}:${state.mip_position}`;
+
         const now = Date.now();
 
+        if (
+        eventKey === this.lastSensorInjectionKey &&
+        now - this.lastSensorInjectionAtMs < 8000
+        ) {
+        return;
+        }
+
+        this.lastSensorInjectionKey = eventKey;
+        this.lastSensorInjectionAtMs = now;
         // Avoid the robot talking over itself too often.
         const shouldSpeakImmediately =
-        event.kind === "radar" || event.kind === "position";
+        event.kind === "position" ||
+        (event.kind === "radar" && event.state.ir_blocked === true);
 
-        const mayCreateResponse = now - this.lastSensorResponseAtMs > 2500;
+        const mayCreateResponse = now - this.lastSensorResponseAtMs > 2000;
 
         console.log("[MIP SENSOR INJECT]", event.text);
-
+/*
         this.connection.sendEvent({
         type: "conversation.item.create",
         item: {
@@ -240,6 +265,22 @@ export class OpenAIVoiceReactAgent {
             ],
         },
         });
+*/
+
+this.connection.sendEvent({
+  type: "conversation.item.create",
+  item: {
+    type: "message",
+    role: "system",
+    content: [{ type: "input_text", text: event.text }],
+  },
+});
+
+if (this.responseActive) {
+  this.pendingSensorResponse = event.text;
+  return;
+}
+this.responseActive = true;
 
         if (shouldSpeakImmediately && mayCreateResponse) {
         this.lastSensorResponseAtMs = now;
@@ -248,9 +289,8 @@ export class OpenAIVoiceReactAgent {
             type: "response.create",
             response: {
             output_modalities: ["audio"],
-            instructions:
-                "React briefly as MiP. If radar is blocked, acknowledge the obstacle and avoid forward movement. If MiP is not upright, acknowledge the position problem. Keep it under one sentence.",
-            },
+    instructions:
+      "React briefly as MiP in English only. Keep it under one sentence.",           },
         });
         }
     });
@@ -269,7 +309,12 @@ export class OpenAIVoiceReactAgent {
         await this.initializeConnection(toolsByName);
         this.setupRobotSensorInjection();
 
+        try {
         await this.handleStreamEvents(inputStream, toolExecutor, sendOutputChunk);
+        } finally {
+        this.unsubscribeRobotSensorEvent?.();
+        this.unsubscribeRobotSensorEvent = undefined;
+        }
     }
 
     private async setupWebSocketConnection(websocketOrStream: AsyncGenerator<string> | WebSocket) {
@@ -465,7 +510,11 @@ export class OpenAIVoiceReactAgent {
                 delta: data.delta
             }));
         */
-
+        if (type === "response.created") {
+        this.responseActive = true;
+        } else if (type === "response.done" || type === "response.output_audio.done") {
+        this.responseActive = false;
+        }
         
         if (type === "response.output_audio.delta") {
              const pcm24k = Buffer.from(data.delta, "base64");

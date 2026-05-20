@@ -97,10 +97,16 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
     const uint8_t position = data[1];
 
     // We store battery as raw only for now. We do not need to publish it unless requested.
+    static uint8_t lastPosition = 0xFF;
+
     robotStatusSetMipBatteryRaw(batteryRaw);
     robotStatusSetMipPosition(position, mipPositionName(position));
 
-    publishRobotState("mip_position");
+    if (position != lastPosition)
+    {
+      lastPosition = position;
+      publishRobotState("mip_position_changed");
+    }
   }
  
  
@@ -156,7 +162,7 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
 
     // While blocked, refresh bridge state fairly quickly.
     // This keeps the server aware without flooding it every UART packet.
-    const bool blockedRefresh = blocked && ((now - lastRadarPublishMs) > 100);
+    const bool blockedRefresh = blocked && ((now - lastRadarPublishMs) > 700);
 
     // When clear and unchanged, do not keep spamming clear updates.
     robotStatusSetRadar(radar, radarName(radar), blocked);
