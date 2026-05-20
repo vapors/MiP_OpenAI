@@ -6,7 +6,8 @@
 #include "lib_websocket.h"
 #include <math.h>
 
-static const uint32_t VAD_START_RMS = 420;        // Tune: raise if false triggers, lower if it misses speech.
+//static const uint32_t VAD_START_RMS = 420;        // Tune: raise if false triggers, lower if it misses speech.
+static const uint32_t VAD_START_RMS = 300;        // Tune: raise if false triggers, lower if it misses speech.
 static const uint32_t VAD_STOP_RMS = 260;         // Hysteresis threshold below start.
 static const uint32_t VAD_START_HOLD_MS = 140;    // Require speech energy for this long before auto-start.
 static const uint32_t VAD_SILENCE_MS = 900;       // Auto-stop after this much silence.
