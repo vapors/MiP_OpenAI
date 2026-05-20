@@ -28,6 +28,9 @@
 #include "control_modes.h"
 #include "ble_control.h"
 #include "MiP_commands.h"
+#include "mip_action_queue.h"
+#include "mip_uart_listener.h"
+#include "robot_status.h"
 
 int16_t sBuffer[bufferLen];
 ButtonChecker button;
@@ -177,6 +180,8 @@ void setup()
   MiPSerial.begin(115200, SERIAL_8N1, MIP_RX_PIN, MIP_TX_PIN);
   MyMiP.init(); // Serial port is configured for 115200
 
+
+
   Serial.println("MiP is Alive!!!");
   delay(100); // Need a delay to let the MiP serial buffer clear.
       MyMiP.setChestLED(255, 0, 0);
@@ -189,9 +194,16 @@ void setup()
     delay(200);
 
 
-  // Start in manual BLE-control mode.
+  // Start status, action, and manual BLE-control systems.
+  setupRobotStatus();
+  setupMipUartListener();
+  setupMipActionQueue();
   setupBleControl();
   setControlMode(MODE_MANUAL, false);
+
+  // Enable passive radar events from MiP.
+  enableMipRadarMode();
+
   delay(200);
 
   // --- init filesystem ---
@@ -246,5 +258,6 @@ void loop()
 
   loopBleControl();
   loopWebsocket();
+  loopRobotStatus();
 //  keepMipAwake(); 
 }

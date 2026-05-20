@@ -8,6 +8,7 @@
 #include "mic.h"
 #include "lib_websocket.h"
 #include "MiP_commands.h"
+#include "robot_status.h"
 
 // These live in main.cpp.
 extern MiP MyMiP;
@@ -143,27 +144,6 @@ static bool parseCsv3(const String& payload, int& a, int& b, int& c)
   return true;
 }
 
-static void sendRobotStateToServer(const char* eventName)
-{
-  if (!client.available()) return;
-
-  // Avoid injecting extra text frames into the server input stream while mic audio
-  // is actively being recorded. Mode/status can be sent again after PTT stops.
-  if (g_bleRecording) return;
-
-  String json = "{";
-  json += "\"type\":\"robot_state\",";
-  json += "\"event\":\"";
-  json += eventName;
-  json += "\",";
-  json += "\"mode\":\"";
-  json += controlModeToString(currentMode);
-  json += "\"";
-  json += "}";
-
-  sendMessage(json.c_str());
-}
-
 void publishBleStatus(const char* eventName)
 {
   String json = "{";
@@ -188,7 +168,7 @@ void publishBleStatus(const char* eventName)
     g_statusChar->notify();
   }
 
-  sendRobotStateToServer(eventName);
+  publishRobotState(eventName, true);
 }
 
 void beginPttRecording(const char* source)

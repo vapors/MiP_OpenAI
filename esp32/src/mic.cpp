@@ -112,6 +112,11 @@ void setRecording(bool recording)
   isRecording = recording;
 }
 
+bool getRecordingState()
+{
+  return isRecording;
+}
+
 void detectSound(int16_t *buffer, size_t length)
 {
   if (!buffer || length == 0)

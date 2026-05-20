@@ -3,16 +3,54 @@ import { tool } from "@langchain/core/tools";
 import { getRobotState, sendMipCommand } from "./robot_bridge";
 
 const headLedModeSchema = z.number().int().min(0).max(3).describe("Head LED mode: 0 off, 1 on, 2 slow blink, 3 fast blink.");
-
+/*
 export const mipGetRobotState = tool(
   async () => JSON.stringify(getRobotState()),
   {
     name: "mip_get_robot_state",
-    description: "Check whether the MiP robot websocket is connected and view the last known robot state/mode.",
+    description: "Check MiP's latest robot state, including websocket connection, mode, recording state, action state, IR blocked flag, and battery placeholders.",
     schema: z.object({}),
   }
 );
+*/
+export const mipGetRobotState = tool(
+  async () => {
+    const state = getRobotState();
 
+    return JSON.stringify({
+      transport_connected: state.transport_connected,
+      esp_ws: state.esp_ws,
+      mode: state.mode,
+      recording: state.recording,
+      action: state.action,
+
+      // Obstacle / radar awareness
+      ir_blocked: state.ir_blocked,
+      radar_code: state.radar_code,
+      radar: state.radar,
+
+      // Body / sensor state
+      mip_position: state.mip_position,
+      mip_position_code: state.mip_position_code,
+      gesture: state.gesture,
+      gesture_code: state.gesture_code,
+      shake_detected: state.shake_detected,
+
+      // Optional / placeholders
+      battery_mv: state.battery_mv,
+      battery_percent: state.battery_percent,
+
+      lastEvent: state.lastEvent,
+      lastUpdatedAt: state.lastUpdatedAt,
+    });
+  },
+  {
+    name: "mip_get_robot_state",
+    description:
+      "Get MiP's latest live robot state. Use this before answering questions about MiP's sensors, IR sensor, radar, obstacle detection, whether the path is blocked or clear, current action, body position, connection state, or whether MiP can safely move forward.",
+    schema: z.object({}),
+  }
+);
 export const mipStop = tool(
   async () => sendMipCommand({ command: "stop" }),
   {

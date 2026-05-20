@@ -8,5 +8,6 @@ bool setupMicrophone();
 size_t handleMicrophone(int16_t* out_mono, size_t frames, uint32_t timeout_ms);
 void micTask(void *parameter);
 void setRecording(bool recording);
+bool getRecordingState();
 
 #endif
