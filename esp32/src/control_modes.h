@@ -15,6 +15,10 @@
     Local stop/safety still works.
     Server/GPT may eventually send bounded MiP commands.
 
+  MODE_GPT_VAD:
+    ESP32 listens locally using a simple RMS VAD and automatically starts/stops
+    recording. BLE stays connected and can still stop/switch modes.
+
   MODE_GPT_AUTONOMOUS:
     GPT/server may eventually issue movement commands without push-to-talk.
     ESP32 must still enforce safety limits, IR/collision checks, and emergency stop.
@@ -23,7 +27,8 @@ enum ControlMode : uint8_t
 {
   MODE_MANUAL = 0,
   MODE_GPT_ASSISTED = 1,
-  MODE_GPT_AUTONOMOUS = 2
+  MODE_GPT_VAD = 2,
+  MODE_GPT_AUTONOMOUS = 3
 };
 
 extern ControlMode currentMode;
@@ -33,6 +38,7 @@ ControlMode controlModeFromString(const String& modeName);
 
 bool isManualMode();
 bool isGptAssistedMode();
+bool isGptVadMode();
 bool isGptAutonomousMode();
 bool allowsGptMotion();
 bool allowsManualMotion();

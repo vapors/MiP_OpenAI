@@ -6,6 +6,7 @@
 #include "config.h"
 #include "mip_action_queue.h"
 #include "robot_status.h"
+#include "vad_controller.h"
 
 using namespace websockets;
 
@@ -83,6 +84,9 @@ void onMessageCallback(WebsocketsMessage message)
     const int16_t* pcm = (const int16_t*)payload;
     const size_t frames = bytes / sizeof(int16_t);
 
+    // Suppress VAD while the assistant is speaking and briefly after each chunk
+    // to reduce echo/retrigger loops.
+    vadSuppressForMs(900);
     speaker_write_mono_i16(pcm, frames);
     return;
   }

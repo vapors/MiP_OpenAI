@@ -231,6 +231,7 @@
         <div class="button-grid">
           <button id="manualBtn" disabled>Manual</button>
           <button class="purple" id="assistBtn" disabled>GPT Assist</button>
+          <button class="purple" id="vadBtn" disabled>GPT VAD</button>
           <button class="green wide" id="autoBtn" disabled>GPT Auto</button>
         </div>
       </div>
@@ -398,6 +399,7 @@
 
     document.getElementById("manualBtn").addEventListener("click", () => sendCommand("MODE:MANUAL"));
     document.getElementById("assistBtn").addEventListener("click", () => sendCommand("MODE:GPT_ASSISTED"));
+    document.getElementById("vadBtn").addEventListener("click", () => sendCommand("MODE:GPT_VAD"));
     document.getElementById("autoBtn").addEventListener("click", () => sendCommand("MODE:GPT_AUTONOMOUS"));
     document.getElementById("nextModeBtn").addEventListener("click", () => sendCommand("MODE:NEXT"));
 

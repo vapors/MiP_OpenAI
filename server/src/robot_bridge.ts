@@ -118,7 +118,7 @@ function allowsSensorInjection(state: RobotState): boolean {
   return (
     state.transport_connected === true &&
     state.recording !== true &&
-    (state.mode === "gpt_assisted" || state.mode === "gpt_autonomous")
+    (state.mode === "gpt_assisted" || state.mode === "gpt_vad" || state.mode === "gpt_autonomous")
   );
 }
 

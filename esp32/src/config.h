@@ -25,7 +25,6 @@ extern const char* WEBSOCKET_HOST;
 #define I2S_MCLK  12 // Master Clock (MCLK)
 // I2S Microphone configuration
 // #define SAMPLE_RATE 44100
-#define SAMPLE_RATE 16000
 #define SAMPLE_BITS 32
 #define CHANNELS 1
 
@@ -34,8 +33,6 @@ extern const char* WEBSOCKET_HOST;
 
 // Buffer configuration
 #define bufferCnt 10
-#define bufferLen 1024
-
 // Audio detection thresholds
 #define MIC_THRESHOLD 2300 // Adjust based on testing
 #define LED_DELAY 1        // ms to keep LED on after sound stops
@@ -44,8 +41,6 @@ extern const char* WEBSOCKET_HOST;
 #define TONE_FREQUENCY 440 // Hz (A4 note)
 #define TONE_DURATION 2000 // ms
 #define TONE_INTERVAL 5000 // ms
-#define SAMPLES_PER_BUFFER 1024
-
 // LED pins
 #define LED_MIC 39   // RED LED for microphone activity
 #define LED_SPKR 40 // BLUE LED for speaker activity

@@ -31,6 +31,7 @@
 #include "mip_action_queue.h"
 #include "mip_uart_listener.h"
 #include "robot_status.h"
+#include "vad_controller.h"
 
 int16_t sBuffer[bufferLen];
 ButtonChecker button;
@@ -198,6 +199,7 @@ void setup()
   setupRobotStatus();
  
   setupMipActionQueue();
+  setupVadController();
   setupBleControl();
   setControlMode(MODE_MANUAL, false);
   setupMipUartListener();

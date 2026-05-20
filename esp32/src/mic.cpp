@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include <Wire.h>
 #include "es8311.h"
+#include "vad_controller.h"
 // Global flags for system state
 bool isSpeakerBusy = false;
 bool isWebSocketConnected = true;
@@ -340,7 +341,9 @@ void micTask(void *parameter)
 {
   while (true)
   {
-    if (!isRecording)
+    // In normal modes, only read the mic while recording. In VAD mode, read
+    // continuously so the local RMS detector can trigger hands-free recording.
+    if (!isRecording && !vadIsListening())
     {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
@@ -353,10 +356,12 @@ void micTask(void *parameter)
     {
       detectSound(soundBuffer, gotFrames);
 
-      if (isWebSocketConnected)
+      // VAD observes all mic frames in GPT_VAD mode. It only starts/stops the
+      // existing PTT state machine; it does not change the audio upload format.
+      vadProcessFrames(soundBuffer, gotFrames);
+
+      if (isRecording && isWebSocketConnected)
       {
-        // Rollback to the original/simple live streaming path.
-        // Send PCM16 mono directly as it is captured instead of queueing.
         size_t bytesOut = gotFrames * sizeof(int16_t);
         sendBinaryData(soundBuffer, bytesOut);
       }

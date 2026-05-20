@@ -48,6 +48,7 @@ const char* controlModeToString(ControlMode mode)
   {
     case MODE_MANUAL:         return "manual";
     case MODE_GPT_ASSISTED:   return "gpt_assisted";
+    case MODE_GPT_VAD:        return "gpt_vad";
     case MODE_GPT_AUTONOMOUS: return "gpt_autonomous";
     default:                  return "unknown";
   }
@@ -61,6 +62,7 @@ ControlMode controlModeFromString(const String& modeName)
 
   if (m == "MANUAL" || m == "MODE:MANUAL") return MODE_MANUAL;
   if (m == "GPT_ASSISTED" || m == "ASSISTED" || m == "MODE:GPT_ASSISTED") return MODE_GPT_ASSISTED;
+  if (m == "GPT_VAD" || m == "VAD" || m == "VOICE" || m == "MODE:GPT_VAD" || m == "MODE:VAD") return MODE_GPT_VAD;
   if (m == "GPT_AUTONOMOUS" || m == "AUTONOMOUS" || m == "MODE:GPT_AUTONOMOUS") return MODE_GPT_AUTONOMOUS;
 
   return currentMode;
@@ -68,11 +70,12 @@ ControlMode controlModeFromString(const String& modeName)
 
 bool isManualMode()        { return currentMode == MODE_MANUAL; }
 bool isGptAssistedMode()   { return currentMode == MODE_GPT_ASSISTED; }
+bool isGptVadMode()        { return currentMode == MODE_GPT_VAD; }
 bool isGptAutonomousMode() { return currentMode == MODE_GPT_AUTONOMOUS; }
 
 bool allowsGptMotion()
 {
-  return currentMode == MODE_GPT_ASSISTED || currentMode == MODE_GPT_AUTONOMOUS;
+  return currentMode == MODE_GPT_ASSISTED || currentMode == MODE_GPT_VAD || currentMode == MODE_GPT_AUTONOMOUS;
 }
 
 bool allowsManualMotion()
@@ -90,6 +93,10 @@ void applyModeLED()
 
     case MODE_GPT_ASSISTED:
       MyMiP.setChestLED(140, 0, 255);      // purple
+      break;
+
+    case MODE_GPT_VAD:
+      MyMiP.setChestLED(255, 180, 0);      // amber = hands-free VAD
       break;
 
     case MODE_GPT_AUTONOMOUS:
@@ -323,6 +330,12 @@ void handleBleCommand(String cmd)
     return;
   }
 
+  if (upper == "MODE:GPT_VAD" || upper == "MODE:VAD")
+  {
+    setControlMode(MODE_GPT_VAD);
+    return;
+  }
+
   if (upper == "MODE:GPT_AUTONOMOUS")
   {
     setControlMode(MODE_GPT_AUTONOMOUS);
@@ -333,7 +346,8 @@ void handleBleCommand(String cmd)
   {
     ControlMode next = MODE_MANUAL;
     if (currentMode == MODE_MANUAL) next = MODE_GPT_ASSISTED;
-    else if (currentMode == MODE_GPT_ASSISTED) next = MODE_GPT_AUTONOMOUS;
+    else if (currentMode == MODE_GPT_ASSISTED) next = MODE_GPT_VAD;
+    else if (currentMode == MODE_GPT_VAD) next = MODE_GPT_AUTONOMOUS;
     else next = MODE_MANUAL;
 
     setControlMode(next);
