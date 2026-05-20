@@ -113,7 +113,7 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
     robotStatusSetRadar(radar, radarName(radar), blocked);
     publishRobotState("radar");
   }
-*/
+
 
     else if (cmd == 0x0C && len >= 1)
     {
@@ -140,8 +140,36 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
         publishRobotState(changed ? "radar_changed" : "radar_blocked");
     }
     }
+*/
+  else if (cmd == 0x0C && len >= 1)
+  {
+    const uint8_t radar = data[0];
+    const bool blocked = (radar == 0x02 || radar == 0x03);
 
-  
+    static uint8_t lastRadar = 0xFF;
+    static bool lastBlocked = false;
+    static uint32_t lastRadarPublishMs = 0;
+
+    const uint32_t now = millis();
+
+    const bool changed = (radar != lastRadar) || (blocked != lastBlocked);
+
+    // While blocked, refresh bridge state fairly quickly.
+    // This keeps the server aware without flooding it every UART packet.
+    const bool blockedRefresh = blocked && ((now - lastRadarPublishMs) > 100);
+
+    // When clear and unchanged, do not keep spamming clear updates.
+    robotStatusSetRadar(radar, radarName(radar), blocked);
+
+    if (changed || blockedRefresh)
+    {
+      lastRadar = radar;
+      lastBlocked = blocked;
+      lastRadarPublishMs = now;
+
+      publishRobotState(changed ? "radar_changed" : "radar_blocked");
+    }
+  }
 
   else if (cmd == 0x0A && len >= 1)
   {

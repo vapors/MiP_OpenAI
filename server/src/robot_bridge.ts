@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { EventEmitter } from "events";
 
 type RobotState = {
   // Server-side transport state: can the server currently send commands to the ESP32?
@@ -25,6 +26,29 @@ type RobotState = {
   lastEvent?: string;
   lastUpdatedAt?: number;
 };
+
+
+const robotEvents = new EventEmitter();
+
+type RobotSensorEvent = {
+  kind: "radar" | "position";
+  text: string;
+  state: RobotState;
+};
+
+let lastInjectedRadarAt = 0;
+let lastInjectedPositionAt = 0;
+
+const SENSOR_INJECT_COOLDOWN_MS = 1500; // Minimum time between injected sensor events to avoid flooding prompts with noise.
+
+export function onRobotSensorEvent(
+  listener: (event: RobotSensorEvent) => void
+) {
+  robotEvents.on("sensor", listener);
+  return () => robotEvents.off("sensor", listener);
+}
+
+
 
 let currentDeviceSocket: WebSocket | null = null;
 let robotState: RobotState = {
@@ -90,6 +114,14 @@ function booleanValue(value: unknown, fallback?: boolean): boolean | undefined {
   return fallback;
 }
 
+function allowsSensorInjection(state: RobotState): boolean {
+  return (
+    state.transport_connected === true &&
+    state.recording !== true &&
+    (state.mode === "gpt_assisted" || state.mode === "gpt_autonomous")
+  );
+}
+
 function numberValue(value: unknown, fallback?: number): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -128,7 +160,7 @@ function logStateIfNeeded() {
 
   console.log("[MIP BRIDGE] State", robotState);
 }
-
+/*
 export function updateRobotStateFromMessage(message: unknown, sourceSocket?: WebSocket) {
   if (!message || typeof message !== "object") return;
 
@@ -167,6 +199,108 @@ export function updateRobotStateFromMessage(message: unknown, sourceSocket?: Web
 
   logStateIfNeeded();
 }
+*/
+export function updateRobotStateFromMessage(message: unknown, sourceSocket?: WebSocket) {
+  if (!message || typeof message !== "object") return;
+
+  const msg = message as Record<string, unknown>;
+  if (msg.type !== "robot_state") return;
+
+  // If a valid robot_state arrives from an open socket, that socket is the active robot.
+  // This recovers cleanly if a stale close event previously cleared the bridge.
+  if (sourceSocket && sourceSocket.readyState === WebSocket.OPEN && currentDeviceSocket !== sourceSocket) {
+    currentDeviceSocket = sourceSocket;
+    console.log("[MIP BRIDGE] Robot socket refreshed from state message");
+  }
+
+  const previous = { ...robotState };
+  const eventName = typeof msg.event === "string" ? msg.event : robotState.lastEvent;
+
+  robotState = {
+    ...robotState,
+    transport_connected: isRobotConnected(),
+    esp_ws: booleanValue(msg.ws, robotState.esp_ws),
+    mode: typeof msg.mode === "string" ? msg.mode : robotState.mode,
+    recording: booleanValue(msg.recording, robotState.recording),
+    action: typeof msg.action === "string" ? msg.action : robotState.action,
+
+    ir_blocked: booleanValue(msg.ir_blocked, robotState.ir_blocked),
+    radar_code: numberValue(msg.radar_code, robotState.radar_code),
+    radar: typeof msg.radar === "string" ? msg.radar : robotState.radar,
+
+    mip_position_code: numberValue(msg.mip_position_code, robotState.mip_position_code),
+    mip_position: typeof msg.mip_position === "string" ? msg.mip_position : robotState.mip_position,
+
+    battery_mv: numberValue(msg.battery_mv, robotState.battery_mv),
+    battery_percent: numberValue(msg.battery_percent, robotState.battery_percent),
+
+    lastEvent: eventName,
+    lastUpdatedAt: Date.now(),
+  };
+
+  console.log("[MIP BRIDGE] State", robotState);
+
+  // Always store robot state, but only inject live sensor events when GPT is allowed
+  // to react to the robot body.
+  if (!allowsSensorInjection(robotState)) {
+    return;
+  }
+
+  // Do not inject routine heartbeat/status noise.
+  if (eventName === "periodic") return;
+
+  const now = Date.now();
+
+  const radarChanged =
+    previous.ir_blocked !== robotState.ir_blocked ||
+    previous.radar_code !== robotState.radar_code ||
+    previous.radar !== robotState.radar;
+
+  if (
+    radarChanged &&
+    typeof robotState.ir_blocked === "boolean" &&
+    now - lastInjectedRadarAt > SENSOR_INJECT_COOLDOWN_MS
+  ) {
+    lastInjectedRadarAt = now;
+
+    const text = robotState.ir_blocked
+      ? `Robot sensor update: MiP's IR/radar now detects an obstacle. Radar state is ${robotState.radar ?? "blocked"}. Avoid forward movement.`
+      : `Robot sensor update: MiP's IR/radar is now clear. Forward movement may be allowed if appropriate.`;
+
+    robotEvents.emit("sensor", {
+      kind: "radar",
+      text,
+      state: getRobotState(),
+    } satisfies RobotSensorEvent);
+  }
+
+  const positionChanged =
+    previous.mip_position !== robotState.mip_position ||
+    previous.mip_position_code !== robotState.mip_position_code;
+
+  if (
+    positionChanged &&
+    robotState.mip_position &&
+    robotState.mip_position !== "unknown" &&
+    now - lastInjectedPositionAt > SENSOR_INJECT_COOLDOWN_MS
+  ) {
+    lastInjectedPositionAt = now;
+
+    const upright = robotState.mip_position === "upright";
+
+    const text = upright
+      ? `Robot sensor update: MiP is upright again.`
+      : `Robot sensor update: MiP is not upright. Current position is ${robotState.mip_position}. Avoid movement that assumes MiP is balanced upright.`;
+
+    robotEvents.emit("sensor", {
+      kind: "position",
+      text,
+      state: getRobotState(),
+    } satisfies RobotSensorEvent);
+  }
+}
+
+
 
 export function getRobotState() {
   const transport_connected = isRobotConnected();
@@ -178,6 +312,7 @@ export function getRobotState() {
     // Compatibility alias for existing tools/prompts that may still read `connected`.
     // Prefer `transport_connected` in new code.
     connected: transport_connected,
+   
   };
 }
 

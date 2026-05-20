@@ -196,11 +196,11 @@ void setup()
 
   // Start status, action, and manual BLE-control systems.
   setupRobotStatus();
-  setupMipUartListener();
+ 
   setupMipActionQueue();
   setupBleControl();
   setControlMode(MODE_MANUAL, false);
-
+  setupMipUartListener();
   // Enable passive radar events from MiP.
   enableMipRadarMode();
 

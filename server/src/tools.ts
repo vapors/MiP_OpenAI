@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
-import { getRobotState, sendMipCommand } from "./robot_bridge";
+import { getRobotState, sendMipCommand, onRobotSensorEvent  } from "./robot_bridge";
 
 const headLedModeSchema = z.number().int().min(0).max(3).describe("Head LED mode: 0 off, 1 on, 2 slow blink, 3 fast blink.");
 /*

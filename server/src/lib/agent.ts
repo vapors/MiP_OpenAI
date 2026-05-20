@@ -10,6 +10,7 @@ import decodeAudio from 'audio-decode';
 import WebSocket from "ws";
 import { OpenAIWebSocketConnection } from "./connections";
 import { VoiceToolExecutor } from "./executor";
+import { onRobotSensorEvent } from "../robot_bridge";
 
 // Constants
 const EVENTS_TO_IGNORE = [
@@ -68,6 +69,9 @@ export class OpenAIVoiceReactAgent {
     private firstAudioChunkAtMs: number | null = null;
     private audioChunkCount: number = 0;
     private recordingStartedAtMs: number | null = null;
+
+    private unsubscribeRobotSensorEvent?: () => void;
+    private lastSensorResponseAtMs = 0;
 
     constructor(params: OpenAIVoiceReactAgentOptions) {
         this.audioManager = new AudioManager();
@@ -209,6 +213,49 @@ export class OpenAIVoiceReactAgent {
         }
     }
 
+    private setupRobotSensorInjection(): void {
+    if (this.unsubscribeRobotSensorEvent) return;
+
+    this.unsubscribeRobotSensorEvent = onRobotSensorEvent((event) => {
+        const now = Date.now();
+
+        // Avoid the robot talking over itself too often.
+        const shouldSpeakImmediately =
+        event.kind === "radar" || event.kind === "position";
+
+        const mayCreateResponse = now - this.lastSensorResponseAtMs > 2500;
+
+        console.log("[MIP SENSOR INJECT]", event.text);
+
+        this.connection.sendEvent({
+        type: "conversation.item.create",
+        item: {
+            type: "message",
+            role: "system",
+            content: [
+            {
+                type: "input_text",
+                text: event.text,
+            },
+            ],
+        },
+        });
+
+        if (shouldSpeakImmediately && mayCreateResponse) {
+        this.lastSensorResponseAtMs = now;
+
+        this.connection.sendEvent({
+            type: "response.create",
+            response: {
+            output_modalities: ["audio"],
+            instructions:
+                "React briefly as MiP. If radar is blocked, acknowledge the obstacle and avoid forward movement. If MiP is not upright, acknowledge the position problem. Keep it under one sentence.",
+            },
+        });
+        }
+    });
+    }
+
 
     // WebSocket Connection Methods
     async connect(
@@ -220,6 +267,8 @@ export class OpenAIVoiceReactAgent {
         const toolExecutor = new VoiceToolExecutor(toolsByName);
 
         await this.initializeConnection(toolsByName);
+        this.setupRobotSensorInjection();
+
         await this.handleStreamEvents(inputStream, toolExecutor, sendOutputChunk);
     }
 
