@@ -3,10 +3,11 @@
 
 #include <Arduino.h>
 
-// Queue for mic PCM chunks waiting to be sent over the WebSocket.
-// This keeps the mic task from calling the WebSocket client directly.
-// Call setupAudioTxQueue() once in setup(), enqueueAudioChunk() from micTask(),
-// and serviceAudioTxQueue() frequently from loop().
+// LEGACY fallback for queued mic PCM chunks.
+// The current recommended input path does NOT use this queue. micTask streams
+// directly via lib_websocket::sendBinaryData(), which keeps audio real-time while
+// still protecting the WebSocket client with a mutex.
+// Keep this only for future experiments.
 
 bool setupAudioTxQueue();
 void clearAudioTxQueue();

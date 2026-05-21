@@ -42,6 +42,17 @@ app.get(
         }
       });
 
+      rawWs.on("close", (code, reason) => {
+        console.log("[DEVICE WS CLOSE]", {
+          code,
+          reason: reason.toString(),
+        });
+      });
+
+      rawWs.on("error", (err) => {
+        console.error("[DEVICE WS ERROR]", err);
+      });
+/*
       const sendOutputToThisRobot = (data: string) => {
         if (rawWs.readyState !== WebSocket.OPEN) return;
 
@@ -58,7 +69,34 @@ app.get(
           // Non-audio text messages are not sent to the robot by default.
         }
       };
+*/
 
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      const sendOutputToThisRobot = async (data: string) => {
+        if (rawWs.readyState !== WebSocket.OPEN) return;
+
+        try {
+          const parsed = JSON.parse(data);
+
+          if (parsed.type === "response.audio.delta" && parsed.delta) {
+            const audioBuffer = Buffer.from(parsed.delta, "base64");
+            const CHUNK_SIZE = 1024;
+
+            for (let i = 0; i < audioBuffer.length; i += CHUNK_SIZE) {
+              if (rawWs.readyState !== WebSocket.OPEN) return;
+
+              rawWs.send(audioBuffer.slice(i, i + CHUNK_SIZE));
+
+              // 512 samples @ 16 kHz = 32 ms.
+              // Slightly under real time keeps a small ESP buffer.
+              await sleep(24);
+            }
+          }
+        } catch {
+          // ignore non-audio
+        }
+      };
       const agent = new OpenAIVoiceReactAgent({
         instructions: INSTRUCTIONS,
         tools: TOOLS,

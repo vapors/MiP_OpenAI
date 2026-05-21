@@ -9,6 +9,7 @@
 #include "lib_websocket.h"
 #include "mic.h"
 #include "robot_status.h"
+#include "speaker_audio_queue.h"
 
 // -----------------------------------------------------------------------------
 // RMS VAD tuning
@@ -163,7 +164,7 @@ void vadProcessFrames(const int16_t* samples, size_t frames)
   }
 
   // Do not start if the network is not ready.
-  if (!client.available())
+  if (!isWebSocketClientConnected())
   {
     resetStartDetector();
     return;
@@ -182,6 +183,8 @@ void vadProcessFrames(const int16_t* samples, size_t frames)
     }
 
     g_wasActionBusy = true;
+
+
     vadSuppressForMs(VAD_ACTION_BUSY_SUPPRESS_MS);
 
     if (g_speechActive || getRecordingState())
@@ -217,6 +220,14 @@ void vadProcessFrames(const int16_t* samples, size_t frames)
       g_speechActive = false;
     }
 
+    return;
+  }
+
+  if (speakerAudioQueueIsPlaying())
+  {
+    g_speechActive = false;
+    g_aboveStartSinceMs = 0;
+    g_lastSpeechMs = now;
     return;
   }
 

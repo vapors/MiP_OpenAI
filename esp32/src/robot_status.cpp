@@ -3,6 +3,11 @@
 #include "control_modes.h"
 #include "lib_websocket.h"
 #include "mic.h"
+#include "speaker_audio_queue.h"
+#include "robot_body_state.h"
+#ifndef ROBOT_STATUS_VERBOSE
+#define ROBOT_STATUS_VERBOSE 0
+#endif
 
 static char g_actionState[24] = "idle";
 static bool g_irBlocked = false;
@@ -10,8 +15,8 @@ static int g_batteryMv = -1;
 static int g_batteryPercent = -1;
 static uint32_t g_lastPeriodicStatusMs = 0;
 static const uint32_t ROBOT_STATUS_PERIOD_MS = 15000; // Publish a periodic status every 15 seconds.
-static volatile bool g_pendingStatusPublish = false;
-static char g_pendingStatusEvent[24] = "status";
+//static volatile bool g_pendingStatusPublish = false;
+//static char g_pendingStatusEvent[32] = "status";
 
 static uint8_t g_mipPositionCode = 0xFF;
 static String g_mipPositionName = "unknown";
@@ -92,13 +97,41 @@ void setRobotActionState(const char* action)
   strncpy(g_actionState, action, sizeof(g_actionState) - 1);
   g_actionState[sizeof(g_actionState) - 1] = '\0';
 }
-
+/*
 void requestRobotStatePublish(const char* eventName)
 {
   if (!eventName || eventName[0] == '\0') eventName = "status";
   strncpy(g_pendingStatusEvent, eventName, sizeof(g_pendingStatusEvent) - 1);
   g_pendingStatusEvent[sizeof(g_pendingStatusEvent) - 1] = '\0';
   g_pendingStatusPublish = true;
+}
+*/
+
+
+static volatile bool g_statusPublishPending = false;
+static char g_pendingStatusEvent[32] = "periodic";
+
+void requestRobotStatePublish(const char* eventName)
+{
+  if (!eventName) eventName = "status";
+
+  strncpy(g_pendingStatusEvent, eventName, sizeof(g_pendingStatusEvent) - 1);
+  g_pendingStatusEvent[sizeof(g_pendingStatusEvent) - 1] = '\0';
+
+  g_statusPublishPending = true;
+}
+
+void loopRobotStatusPublisher()
+{
+  if (!g_statusPublishPending) return;
+
+  g_statusPublishPending = false;
+
+  char eventCopy[32];
+  strncpy(eventCopy, g_pendingStatusEvent, sizeof(eventCopy) - 1);
+  eventCopy[sizeof(eventCopy) - 1] = '\0';
+
+  publishRobotState(eventCopy);
 }
 
 const char* getRobotActionState()
@@ -138,10 +171,10 @@ int getRobotBatteryPercent()
 
 void publishRobotState(const char* eventName, bool force)
 {
-  if (!client.available()) return;
+  if (!isWebSocketClientConnected()) return;
 
-  // Avoid extra text frames during active mic upload except for forced state changes.
-  if (getRecordingState() && !force) return;
+  // Avoid extra text frames during active mic upload/playback except for forced state changes.
+  if ((getRecordingState() || speakerAudioQueueIsPlaying()) && !force) return;
 /*
   String json = "{";
   json += "\"type\":\"robot_state\",";
@@ -154,7 +187,19 @@ void publishRobotState(const char* eventName, bool force)
   json += "\"recording\":";
   json += getRecordingState() ? "true" : "false";
   json += ",\"ws\":";
-  json += client.available() ? "true" : "false";
+  json += isWebSocketClientConnected() ? "true" : "false";
+  json += ",\"body_type\":\"";
+  json += robotBodyTypeToString(getRobotBodyType());
+  json += "\"";
+  json += ",\"body_state\":\"";
+  json += robotBodyStateToString(getRobotBodyConnectionState());
+  json += "\"";
+  json += ",\"body_connected\":";
+  json += robotBodyConnected() ? "true" : "false";
+  json += ",\"mip_body_connected\":";
+  json += robotBodyConnected() && getRobotBodyType() == ROBOT_BODY_MIP ? "true" : "false";
+  json += ",\"body_last_rx_age_ms\":";
+  json += String(robotBodyLastRxAgeMs());
   json += ",\"action\":\"";
   json += g_actionState;
   json += "\",";
@@ -178,7 +223,19 @@ void publishRobotState(const char* eventName, bool force)
   json += "\"recording\":";
   json += getRecordingState() ? "true" : "false";
   json += ",\"ws\":";
-  json += client.available() ? "true" : "false";
+  json += isWebSocketClientConnected() ? "true" : "false";
+  json += ",\"body_type\":\"";
+  json += robotBodyTypeToString(getRobotBodyType());
+  json += "\"";
+  json += ",\"body_state\":\"";
+  json += robotBodyStateToString(getRobotBodyConnectionState());
+  json += "\"";
+  json += ",\"body_connected\":";
+  json += robotBodyConnected() ? "true" : "false";
+  json += ",\"mip_body_connected\":";
+  json += robotBodyConnected() && getRobotBodyType() == ROBOT_BODY_MIP ? "true" : "false";
+  json += ",\"body_last_rx_age_ms\":";
+  json += String(robotBodyLastRxAgeMs());
   json += ",\"action\":\"";
   json += g_actionState;
   json += "\",";
@@ -212,11 +269,26 @@ void publishRobotState(const char* eventName, bool force)
 
 
 
+  #if ROBOT_STATUS_VERBOSE
   Serial.print("[ROBOT STATUS] ");
   Serial.println(json);
+  #endif
   sendMessage(json.c_str());
 }
 
+
+
+void loopRobotStatus()
+{
+  const uint32_t now = millis();
+
+  if (now - g_lastPeriodicStatusMs >= ROBOT_STATUS_PERIOD_MS)
+  {
+    g_lastPeriodicStatusMs = now;
+    requestRobotStatePublish("periodic");
+  }
+}
+/*\/
 void loopRobotStatus()
 {
 
@@ -231,3 +303,4 @@ void loopRobotStatus()
   g_lastPeriodicStatusMs = now;
   publishRobotState("periodic", false);
 }
+*/

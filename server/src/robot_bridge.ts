@@ -9,6 +9,10 @@ type RobotState = {
 
   // ESP32-reported state: does the ESP32 believe its WebSocket is connected?
   esp_ws: boolean;
+  body_state?: string;
+  body_connected?: boolean;
+  mip_body_connected?: boolean;
+  body_last_rx_age_ms?: number;
 
   mode?: string;
   recording?: boolean;
@@ -27,6 +31,8 @@ type RobotState = {
   battery_percent?: number;
   lastEvent?: string;
   lastUpdatedAt?: number;
+  body_type?: string;
+
 };
 
 
@@ -60,7 +66,16 @@ export function onRobotSensorEvent(
 let currentDeviceSocket: WebSocket | null = null;
 let robotState: RobotState = {
   transport_connected: false,
+
+  
   esp_ws: false,
+
+
+  body_state: "unknown",
+  body_connected: false,
+  mip_body_connected: false,
+  body_last_rx_age_ms: -1,
+
   mode: "unknown",
   recording: false,
   action: "idle",
@@ -165,7 +180,21 @@ function logStateIfNeeded() {
   lastLoggedIrBlocked = robotState.ir_blocked;
   lastLoggedAction = robotState.action;
 
-  console.log("[MIP BRIDGE] State", robotState);
+  console.log("[MIP BRIDGE] State", {
+    transport_connected: robotState.transport_connected,
+    esp_ws: robotState.esp_ws,
+    mode: robotState.mode,
+    body_type: robotState.body_type,
+    body_state: robotState.body_state,
+    body_connected: robotState.body_connected,
+    mip_body_connected: robotState.mip_body_connected,
+    body_last_rx_age_ms: robotState.body_last_rx_age_ms,
+    action: robotState.action,
+    ir_blocked: robotState.ir_blocked,
+    radar: robotState.radar,
+    mip_position: robotState.mip_position,
+    lastEvent: robotState.lastEvent,
+  });
 }
 /*
 export function updateRobotStateFromMessage(message: unknown, sourceSocket?: WebSocket) {
@@ -228,6 +257,13 @@ export function updateRobotStateFromMessage(message: unknown, sourceSocket?: Web
     transport_connected: isRobotConnected(),
     esp_ws: booleanValue(msg.ws, robotState.esp_ws),
     mode: typeof msg.mode === "string" ? msg.mode : robotState.mode,
+
+    body_type: typeof msg.body_type === "string" ? msg.body_type : robotState.body_type,
+    body_state: typeof msg.body_state === "string" ? msg.body_state : robotState.body_state,
+    body_connected: booleanValue(msg.body_connected, robotState.body_connected),
+    mip_body_connected: booleanValue(msg.mip_body_connected, robotState.mip_body_connected),
+    body_last_rx_age_ms: numberValue(msg.body_last_rx_age_ms, robotState.body_last_rx_age_ms),
+
     recording: booleanValue(msg.recording, robotState.recording),
     action: typeof msg.action === "string" ? msg.action : robotState.action,
 
@@ -245,8 +281,8 @@ export function updateRobotStateFromMessage(message: unknown, sourceSocket?: Web
     lastUpdatedAt: Date.now(),
   };
 
-  console.log("[MIP BRIDGE] State", robotState);
-
+  //console.log("[MIP BRIDGE] State", robotState);
+  logStateIfNeeded();
   // Always store robot state, but only inject live sensor events when GPT is allowed
   // to react to the robot body.
   if (!allowsSensorInjection(robotState)) {
@@ -373,6 +409,7 @@ function waitForActionDone(timeoutMs = 12000): Promise<string> {
 }
 
 export async function sendMipCommand(command: Record<string, unknown>) {
+  
   if (!isRobotConnected() || !currentDeviceSocket) {
     console.warn("[MIP TOOL] Robot WebSocket is not connected");
     return "MiP robot is not connected.";

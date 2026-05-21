@@ -92,7 +92,7 @@ static inline uint8_t levelFromPcm(const int16_t* pcm, size_t frames) {
   if (v > 255) v = 255;
   return (uint8_t)v;
 }
-
+/*
 bool speaker_write_mono_i16(const int16_t* mono, size_t frames, uint32_t timeout_ms)
 {
   if (!mono || frames == 0) return false;
@@ -146,8 +146,74 @@ bool speaker_write_mono_i16(const int16_t* mono, size_t frames, uint32_t timeout
 
   return true;
 }
+*/
+bool speaker_write_mono_i16(const int16_t* mono, size_t frames, uint32_t timeout_ms)
+{
+  if (!mono || frames == 0) return false;
 
+  g_mouthLevel = levelFromPcm(mono, frames);
 
+  const size_t CHUNK_FRAMES = 512;
+  const bool need_scale = (s_volume01 < 0.999f);
+
+  size_t offset = 0;
+
+  while (offset < frames)
+  {
+    size_t n = frames - offset;
+    if (n > CHUNK_FRAMES) n = CHUNK_FRAMES;
+
+    int16_t stereo[CHUNK_FRAMES * 2];
+
+    for (size_t i = 0; i < n; ++i)
+    {
+      int16_t sample = mono[offset + i];
+      if (need_scale) sample = scale_clip_i16(sample, s_volume01);
+
+      stereo[i * 2]     = sample;
+      stereo[i * 2 + 1] = sample;
+    }
+
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(stereo);
+    size_t totalBytes = n * 2 * sizeof(int16_t);
+    size_t writtenTotal = 0;
+
+    while (writtenTotal < totalBytes)
+    {
+      size_t bytes_written = 0;
+
+      esp_err_t err = i2s_write(
+        I2S_PORT_SPEAKER,
+        p + writtenTotal,
+        totalBytes - writtenTotal,
+        &bytes_written,
+        pdMS_TO_TICKS(timeout_ms)
+      );
+
+      if (err != ESP_OK)
+      {
+        g_mouthLevel = 0;
+        Serial.printf("[SPK] i2s_write failed: %s wrote=%u/%u\n",
+                      esp_err_to_name(err),
+                      (unsigned)writtenTotal,
+                      (unsigned)totalBytes);
+        return false;
+      }
+
+      if (bytes_written == 0)
+      {
+        taskYIELD();
+        continue;
+      }
+
+      writtenTotal += bytes_written;
+    }
+
+    offset += n;
+  }
+
+  return true;
+}
 void writeToAudioBuffer(int16_t *buffer, size_t samples)
 {
   // Write samples to both left and right channels

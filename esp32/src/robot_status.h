@@ -17,6 +17,8 @@ void robotStatusSetRadarGestureMode(uint8_t modeCode);
 void robotStatusSetDetectionStatus(uint8_t id, uint8_t power);
 void robotStatusSetMipDetected(uint8_t id);
 void robotStatusSetShakeDetected(bool detected);
+void requestRobotStatePublish(const char* eventName);
+void loopRobotStatusPublisher();
 
 void setRobotActionState(const char* action);
 const char* getRobotActionState();
@@ -29,7 +31,7 @@ int getRobotBatteryMillivolts();
 int getRobotBatteryPercent();
 
 // Request a status publish from the main loop. Safe to call from worker tasks.
-void requestRobotStatePublish(const char* eventName = "status");
+//void requestRobotStatePublish(const char* eventName = "status");
 
 // Publishes a JSON robot_state message to the server immediately. Prefer
 // requestRobotStatePublish() from worker tasks. If force=false, periodic status

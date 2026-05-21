@@ -20,6 +20,10 @@ void handleBleCommand(String cmd);
 void beginPttRecording(const char* source = "unknown");
 void endPttRecording(const char* source = "unknown");
 
+// Hard-abort an active/pending PTT session when the WebSocket drops.
+// Does not send STOP_RECORD because the server connection is already gone.
+void forcePttAbortFromWebSocketDisconnect();
+
 // Status notification helper.
 void publishBleStatus(const char* eventName = "status");
 

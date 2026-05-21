@@ -76,7 +76,7 @@ void startFaceTask() {
     s_cmdQ = xQueueCreate(8, sizeof(FaceCmd));
   }
   if (s_faceTaskHandle) return;
-  xTaskCreatePinnedToCore(faceTask, "faceTask", 8192, nullptr, 2, &s_faceTaskHandle, 1);
+  xTaskCreatePinnedToCore(faceTask, "faceTask", 8192, nullptr, 1, &s_faceTaskHandle, 0);
 }
 
 // --- Control API (queue to face task) ---

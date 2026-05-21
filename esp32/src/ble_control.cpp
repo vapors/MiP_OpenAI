@@ -3,12 +3,17 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <driver/i2s.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <string.h>
+#include <string>
 
 #include "config.h"
 #include "mic.h"
 #include "lib_websocket.h"
 #include "MiP_commands.h"
 #include "robot_status.h"
+#include "vad_controller.h"
 
 // These live in main.cpp.
 extern MiP MyMiP;
@@ -26,6 +31,47 @@ static bool g_pendingPttStop = false;
 static bool g_pttStopping = false;
 static unsigned long g_pttStartedAtMs = 0;
 static unsigned long g_pttStopRequestedAtMs = 0;
+
+// -----------------------------------------------------------------------------
+// BLE command queue
+// -----------------------------------------------------------------------------
+// NimBLE write callbacks run on the nimble_host task, which has a limited stack.
+// Keep that callback tiny: copy the command into this queue and return.
+// The command task below performs parsing, MiP actions, WebSocket status updates,
+// and any String/JSON work on its own stack.
+static const uint8_t BLE_CMD_QUEUE_LEN = 8;
+static const size_t BLE_CMD_MAX_LEN = 96;
+
+struct BleQueuedCommand
+{
+  char text[BLE_CMD_MAX_LEN];
+};
+
+static QueueHandle_t g_bleCommandQueue = nullptr;
+static TaskHandle_t g_bleCommandTaskHandle = nullptr;
+static uint32_t g_bleCommandsDropped = 0;
+
+static bool enqueueBleCommand(const std::string& value)
+{
+  if (!g_bleCommandQueue)
+  {
+    return false;
+  }
+
+  BleQueuedCommand cmd;
+  memset(&cmd, 0, sizeof(cmd));
+
+  size_t n = value.length();
+  if (n >= BLE_CMD_MAX_LEN)
+  {
+    n = BLE_CMD_MAX_LEN - 1;
+  }
+
+  memcpy(cmd.text, value.data(), n);
+  cmd.text[n] = '\0';
+
+  return xQueueSend(g_bleCommandQueue, &cmd, 0) == pdTRUE;
+}
 
 // 24 kHz, 16-bit mono = 48,000 bytes/sec, so 100 ms = 4,800 bytes.
 // Keep the PTT gate comfortably above the OpenAI Realtime commit minimum.
@@ -163,7 +209,7 @@ void publishBleStatus(const char* eventName)
   json += "\"recording\":";
   json += g_bleRecording ? "true" : "false";
   json += ",\"ws\":";
-  json += client.available() ? "true" : "false";
+  json += isWebSocketClientConnected() ? "true" : "false";
   json += "}";
 
   Serial.print("[BLE STATUS] ");
@@ -221,6 +267,31 @@ void endPttRecording(const char* source)
   g_pendingPttStop = true;
 }
 
+void forcePttAbortFromWebSocketDisconnect()
+{
+  const bool wasActive = g_bleRecording || g_pendingPttStart || g_pendingPttStop || g_pttStopping || getRecordingState();
+
+  g_pendingPttStart = false;
+  g_pendingPttStop = false;
+  g_pttStopping = false;
+  g_bleRecording = false;
+  g_pttStartedAtMs = 0;
+  g_pttStopRequestedAtMs = 0;
+
+  setRecording(false);
+
+  // If VAD had started the session, clear its internal speech-active state so it
+  // does not later emit a stale endPttRecording() after reconnect.
+  vadReset();
+  vadSuppressForMs(1200);
+
+  if (wasActive)
+  {
+    Serial.println("[PTT] aborted because WebSocket disconnected");
+    publishBleStatus("ptt_aborted_ws_disconnect");
+  }
+}
+
 // Runs from loopBleControl(), not from the NimBLE callback.
 // This keeps WebSocket sends and timing-sensitive audio work out of the BLE
 // callback thread.
@@ -233,7 +304,7 @@ static void processPttState()
   {
     g_pendingPttStart = false;
 
-    if (!client.available())
+    if (!isWebSocketClientConnected())
     {
       Serial.println("[PTT] Start ignored; websocket disconnected");
       publishBleStatus("ptt_start_no_ws");
@@ -495,6 +566,28 @@ void handleBleCommand(String cmd)
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// BLE command task
+// -----------------------------------------------------------------------------
+static void bleCommandTask(void* parameter)
+{
+  Serial.println("[BLE] command task started");
+
+  BleQueuedCommand cmd;
+
+  while (true)
+  {
+    if (xQueueReceive(g_bleCommandQueue, &cmd, portMAX_DELAY) == pdTRUE)
+    {
+      handleBleCommand(String(cmd.text));
+
+      // Let Wi-Fi, BLE, and audio tasks breathe after command/status work.
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
+  }
+}
+
 // -----------------------------------------------------------------------------
 // BLE service
 // -----------------------------------------------------------------------------
@@ -505,13 +598,22 @@ public:
   {
     std::string value = characteristic->getValue();
 
-    Serial.print("[BLE WRITE] length=");
-    Serial.println(value.length());
-
-    if (!value.empty())
+    if (value.empty())
     {
-      String cmd = String(value.c_str());
-      handleBleCommand(cmd);
+      return;
+    }
+
+    if (!enqueueBleCommand(value))
+    {
+      g_bleCommandsDropped++;
+
+      // Keep logging minimal in the NimBLE callback. Do not build JSON, publish
+      // status, or call MiP/WebSocket functions here.
+      if ((g_bleCommandsDropped == 1) || ((g_bleCommandsDropped % 10) == 0))
+      {
+        Serial.printf("[BLE] command queue full; dropped=%lu\n",
+                      (unsigned long)g_bleCommandsDropped);
+      }
     }
   }
 };
@@ -555,6 +657,31 @@ void setupBleControl()
   NimBLEAdvertisementData scanData;
   scanData.setName(MIP_BLE_DEVICE_NAME);
   advertising->setScanResponseData(scanData);
+
+  // Create the BLE command queue/task before advertising starts so the write
+  // callback can immediately enqueue commands after a phone connects.
+  if (!g_bleCommandQueue)
+  {
+    g_bleCommandQueue = xQueueCreate(BLE_CMD_QUEUE_LEN, sizeof(BleQueuedCommand));
+
+    if (!g_bleCommandQueue)
+    {
+      Serial.println("[BLE] ERROR: failed to create command queue");
+    }
+  }
+
+  if (g_bleCommandQueue && !g_bleCommandTaskHandle)
+  {
+    xTaskCreatePinnedToCore(
+      bleCommandTask,
+      "bleCommandTask",
+      6144,
+      nullptr,
+      1,
+      &g_bleCommandTaskHandle,
+      1
+    );
+  }
 
   advertising->start();
 

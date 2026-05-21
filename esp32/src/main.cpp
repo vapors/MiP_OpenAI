@@ -33,7 +33,19 @@
 #include "mip_uart_listener.h"
 #include "robot_status.h"
 #include "vad_controller.h"
+#include "speaker_audio_queue.h"
+#include "robot_body_state.h"
+/*
+old task pinning and priorities for reference:
+speakerAudioTask -> core 1, priority 2
+websocketTxTask  -> core 1, priority 2
+micTask          -> core 1, priority 1
+mipActionTask    -> core 1, priority 1
+mipUartRx        -> core 1, priority 1
+Arduino loop     -> core 1
+faceTask         -> core 0, priority 2
 
+*/
 int16_t sBuffer[bufferLen];
 ButtonChecker button;
 
@@ -227,14 +239,14 @@ void setup()
 
   // Start status, action, and manual BLE-control systems.
   setupRobotStatus();
- 
+  setupRobotBodyState();
   setupMipActionQueue();
   setupVadController();
   setupBleControl();
   setControlMode(MODE_MANUAL, false);
   setupMipUartListener();
   // Enable passive radar events from MiP.
-  enableMipRadarMode();
+  //enableMipRadarMode();
 
   delay(200);
 
@@ -271,7 +283,8 @@ face_enable_auto_blink(true);
 
   setRecording(false);
   setupAudioIO();
-  xTaskCreatePinnedToCore(micTask, "micTask", 16000, NULL, 1, NULL, 1);
+  setupSpeakerAudioQueue();
+  xTaskCreatePinnedToCore(micTask, "micTask", 16000, NULL, 2, NULL, 1);
 }
 
 void loop()
@@ -287,7 +300,8 @@ void loop()
   {
     endPttRecording("button");
   }
-
+  loopRobotBodyState();
+  loopRobotStatusPublisher();
   loopBleControl();
   loopWebsocket();
   loopRobotStatus();

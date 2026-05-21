@@ -20,6 +20,15 @@ export const mipGetRobotState = tool(
     return JSON.stringify({
       transport_connected: state.transport_connected,
       esp_ws: state.esp_ws,
+
+
+      body_type: state.body_type,
+      body_state: state.body_state,
+      body_connected: state.body_connected,
+      mip_body_connected: state.mip_body_connected,
+      body_last_rx_age_ms: state.body_last_rx_age_ms,
+
+
       mode: state.mode,
       recording: state.recording,
       action: state.action,

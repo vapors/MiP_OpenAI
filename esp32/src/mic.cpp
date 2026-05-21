@@ -11,6 +11,7 @@
 #include "vad_controller.h"
 // Global flags for system state
 bool isSpeakerBusy = false;
+// Legacy flag; use isWebSocketClientConnected() for live transport state.
 bool isWebSocketConnected = true;
 int16_t soundBuffer[bufferLen];
 bool isRecording = false;
@@ -360,7 +361,7 @@ void micTask(void *parameter)
       // existing PTT state machine; it does not change the audio upload format.
       vadProcessFrames(soundBuffer, gotFrames);
 
-      if (isRecording && isWebSocketConnected)
+      if (isRecording && isWebSocketClientConnected())
       {
         size_t bytesOut = gotFrames * sizeof(int16_t);
         sendBinaryData(soundBuffer, bytesOut);

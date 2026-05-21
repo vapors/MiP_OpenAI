@@ -3,9 +3,14 @@
 #include "MiP_commands.h"
 #include "robot_status.h"
 #include "lib_websocket.h"
+#include "robot_body_state.h"
 
 extern HardwareSerial MiPSerial;
 extern MiP MyMiP;
+
+#ifndef MIP_UART_VERBOSE
+#define MIP_UART_VERBOSE 0
+#endif
 
 // -----------------------------------------------------------------------------
 // MiP UART packet parser
@@ -84,12 +89,17 @@ static const char* gestureName(uint8_t gesture)
 
 static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
 {
+  // Any valid MiP packet proves the body is present. Keep this task light.
+  notifyRobotBodyPacketSeen(ROBOT_BODY_MIP);
+
+#if MIP_UART_VERBOSE
   Serial.printf("[MIP UART RX] cmd=0x%02X len=%u", cmd, len);
   for (uint8_t i = 0; i < len; i++)
   {
     Serial.printf(" %02X", data[i]);
   }
   Serial.println();
+#endif
 
   if (cmd == 0x79 && len >= 2)
   {
@@ -105,7 +115,7 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
     if (position != lastPosition)
     {
       lastPosition = position;
-      publishRobotState("mip_position_changed");
+      requestRobotStatePublish("mip_position_changed");
     }
   }
  
@@ -146,7 +156,7 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
         publishRobotState(changed ? "radar_changed" : "radar_blocked");
     }
     }
-*/
+
   else if (cmd == 0x0C && len >= 1)
   {
     const uint8_t radar = data[0];
@@ -176,35 +186,72 @@ static void handleMipPacket(uint8_t cmd, const uint8_t* data, uint8_t len)
       publishRobotState(changed ? "radar_changed" : "radar_blocked");
     }
   }
+*/
+
+else if (cmd == 0x0C && len >= 1)
+{
+  const uint8_t radar = data[0];
+  const bool blocked = (radar == 0x02 || radar == 0x03);
+
+  static uint8_t lastRadar = 0xFF;
+  static bool lastBlocked = false;
+  static uint32_t lastRadarPublishMs = 0;
+
+  const uint32_t now = millis();
+
+  const bool changed = (radar != lastRadar) || (blocked != lastBlocked);
+
+  // Keep this slower while debugging. 700 ms was okay earlier,
+  // but rapid 02/03 alternation can still flood status.
+  const bool blockedRefresh =
+    blocked && ((now - lastRadarPublishMs) > 1200);
+
+  robotStatusSetRadar(radar, radarName(radar), blocked);
+
+  if (changed || blockedRefresh)
+  {
+    lastRadar = radar;
+    lastBlocked = blocked;
+    lastRadarPublishMs = now;
+
+    // Prefer a lightweight request if your robot_status system has it.
+    requestRobotStatePublish(changed ? "radar_changed" : "radar_blocked");
+
+    // If you do not have requestRobotStatePublish(), use publishRobotState()
+    // only temporarily, but the publish should eventually move out of this task.
+    // publishRobotState(changed ? "radar_changed" : "radar_blocked");
+  }
+}
+
 
   else if (cmd == 0x0A && len >= 1)
   {
     const uint8_t gesture = data[0];
 
     robotStatusSetGesture(gesture, gestureName(gesture));
-    publishRobotState("gesture");
+    requestRobotStatePublish("gesture");
   }
   else if (cmd == 0x0D && len >= 1)
   {
     const uint8_t mode = data[0];
 
     robotStatusSetRadarGestureMode(mode);
-    publishRobotState("radar_mode");
+    requestRobotStatePublish("radar_mode");
   }
   else if (cmd == 0x0F && len >= 2)
   {
     robotStatusSetDetectionStatus(data[0], data[1]);
-    publishRobotState("detection_status");
+    requestRobotStatePublish("detection_status");
   }
   else if (cmd == 0x04 && len >= 1)
   {
     robotStatusSetMipDetected(data[0]);
-    publishRobotState("mip_detected");
+    requestRobotStatePublish("mip_detected");
   }
   else if (cmd == 0x1A)
   {
     robotStatusSetShakeDetected(true);
-    publishRobotState("shake");
+    requestRobotStatePublish("shake");
   }
 }
 
@@ -289,7 +336,9 @@ static void feedMipUartByte(uint8_t b)
       uint8_t decoded = (highNibble << 4) | nibble;
       haveHighNibble = false;
 
+#if MIP_UART_VERBOSE
       Serial.printf("[MIP UART HEX] %02X\n", decoded);
+#endif
       feedMipByte(decoded);
     }
 
@@ -332,9 +381,9 @@ void setupMipUartListener()
   xTaskCreatePinnedToCore(
     mipUartListenerTask,
     "mipUartRx",
-    4096,
+    8192,
     nullptr,
-    1,
+    2,
     nullptr,
     1
   );
@@ -358,4 +407,33 @@ void enableMipRadarMode()
 void disableMipRadarGestureMode()
 {
   MyMiP.setGestureRadarMode(0x00);
+}
+
+// -----------------------------------------------------------------------------
+// Recovery 
+// -----------------------------------------------------------------------------  
+void recoverMipUart()
+{
+  Serial.println("[MIP] Recovering UART / MiP interface");
+  //MiPSerial.begin(115200, SERIAL_8N1, MIP_RX_PIN, MIP_TX_PIN);
+
+  // Clear any garbage from MiP power cycling.
+  while (MiPSerial.available() > 0)
+  {
+    MiPSerial.read();
+  }
+
+  // Give the MiP side a small settle window.
+  delay(20);
+
+  // Reinitialize the MiP library/protocol state.
+  MyMiP.init();
+
+  // Drain anything produced during init.
+  while (MiPSerial.available() > 0)
+  {
+    MiPSerial.read();
+  }
+
+  Serial.println("[MIP] Recovery complete");
 }

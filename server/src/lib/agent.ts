@@ -11,7 +11,8 @@ import WebSocket from "ws";
 import { OpenAIWebSocketConnection } from "./connections";
 import { VoiceToolExecutor } from "./executor";
 import { onRobotSensorEvent } from "../robot_bridge";
-
+const ROBOT_AUDIO_RATE = 16000;
+const OPENAI_AUDIO_RATE = 24000;
 // Constants
 const EVENTS_TO_IGNORE = [
     "response.function_call_arguments.delta",
@@ -77,6 +78,7 @@ export class OpenAIVoiceReactAgent {
     private unsubscribeRobotSensorEvent?: () => void;
     private lastSensorResponseAtMs = 0;
 
+
     constructor(params: OpenAIVoiceReactAgentOptions) {
         this.audioManager = new AudioManager();
         this.connection = new OpenAIWebSocketConnection({
@@ -120,7 +122,7 @@ export class OpenAIVoiceReactAgent {
 
             const rawPcm16k = this.audioManager.getCurrentRawPcmBuffer();
 
-            const MIN_RAW_BYTES = 16000 * 2 * 0.75; // 750 ms @ 16k PCM16 mono
+            const MIN_RAW_BYTES = ROBOT_AUDIO_RATE * 2 * 0.75; // 750 ms @ 16k PCM16 mono
             if (rawPcm16k.length < MIN_RAW_BYTES) {
             console.log("Raw PCM payload too short, skipping OpenAI commit:", {
                 rawAudioBytes: rawPcm16k.length,
@@ -129,13 +131,13 @@ export class OpenAIVoiceReactAgent {
             return;
             }
 
-            const pcm24k = resamplePcm16Mono(rawPcm16k, 16000, 24000);
+            const pcm24k = resamplePcm16Mono(rawPcm16k, ROBOT_AUDIO_RATE, OPENAI_AUDIO_RATE);
 
             console.log("Preparing resampled PCM audio for OpenAI:", {
             inputBytes16k: rawPcm16k.length,
-            inputApproxMs: Math.round(rawPcm16k.length / 2 / 16000 * 1000),
+            inputApproxMs: Math.round(rawPcm16k.length / 2 / ROBOT_AUDIO_RATE * 1000),
             outputBytes24k: pcm24k.length,
-            outputApproxMs: Math.round(pcm24k.length / 2 / 24000 * 1000),
+            outputApproxMs: Math.round(pcm24k.length / 2 / OPENAI_AUDIO_RATE * 1000),
             chunks: this.audioChunkCount,
             firstChunkDelayMs: this.firstAudioChunkAtMs && this.recordingStartedAtMs
                 ? this.firstAudioChunkAtMs - this.recordingStartedAtMs
@@ -226,6 +228,7 @@ export class OpenAIVoiceReactAgent {
 
 
         const state = event.state;
+        const robotBusy = event.state.action && event.state.action !== "idle";
 
         const eventKey =
         event.kind === "radar"
@@ -234,6 +237,14 @@ export class OpenAIVoiceReactAgent {
 
         const now = Date.now();
 
+        if (robotBusy) {
+        console.log("[MIP SENSOR INJECT] stored only; robot action busy");
+        return;
+        }
+        if (this.responseActive) {
+        console.log("[MIP SENSOR INJECT] stored only; response active");
+        return;
+        }
         if (
         eventKey === this.lastSensorInjectionKey &&
         now - this.lastSensorInjectionAtMs < 8000
@@ -372,13 +383,15 @@ this.responseActive = true;
             if (this.recording) {
                 this.audioChunkCount++;
             }
-
+            
+            /*
             console.log("===Received binary audio message:", {
                 size: buffer.length,
                 recording: this.recording,
                 chunkCount: this.audioChunkCount,
                 t: Date.now()
             });
+            */
 
             // Ignore accidental/tiny packets such as old button-state frames.
             if (!this.recording) {
@@ -518,15 +531,15 @@ this.responseActive = true;
         
         if (type === "response.output_audio.delta") {
              const pcm24k = Buffer.from(data.delta, "base64");
-            const pcm16k = resamplePcm16Mono(pcm24k, 24000, 16000);
+            const pcm16k = resamplePcm16Mono(pcm24k, OPENAI_AUDIO_RATE, ROBOT_AUDIO_RATE);
             await sendOutputChunk(JSON.stringify({
                 type: "response.audio.delta",
             delta: pcm16k.toString("base64")
             }));
         
-        } else if (type === "response.audio.delta") {
+        //} else if (type === "response.audio.delta") {
             // Older beta event name, kept for compatibility
-            await sendOutputChunk(JSON.stringify(data));
+         //   await sendOutputChunk(JSON.stringify(data));
         } else if (type === "response.output_audio.done") {
             console.log("Audio output done");
         } else if (type === "response.output_audio_transcript.done") {

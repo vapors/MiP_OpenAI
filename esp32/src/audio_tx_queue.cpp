@@ -1,5 +1,14 @@
 #include "audio_tx_queue.h"
 
+// -----------------------------------------------------------------------------
+// LEGACY / NOT USED BY CURRENT MIC STREAM
+// -----------------------------------------------------------------------------
+// The current stable input path streams microphone PCM directly through
+// lib_websocket::sendBinaryData(), which uses a mutex-protected real-time send.
+// Keep this file only as an experimental fallback. Do not call setupAudioTxQueue()
+// or serviceAudioTxQueue() unless intentionally testing queued mic audio.
+// -----------------------------------------------------------------------------
+
 #include "config.h"
 #include "lib_websocket.h"
 
