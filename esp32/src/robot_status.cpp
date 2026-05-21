@@ -121,6 +121,7 @@ void requestRobotStatePublish(const char* eventName)
   g_statusPublishPending = true;
 }
 
+/*
 void loopRobotStatusPublisher()
 {
   if (!g_statusPublishPending) return;
@@ -133,6 +134,33 @@ void loopRobotStatusPublisher()
 
   publishRobotState(eventCopy);
 }
+*/
+
+static bool isCriticalRobotStateEvent(const char* eventName)
+{
+  if (!eventName) return false;
+
+  return strcmp(eventName, "body_lost") == 0 ||
+         strcmp(eventName, "body_detected") == 0 ||
+         strcmp(eventName, "body_connected") == 0 ||
+         strcmp(eventName, "body_searching") == 0;
+}
+
+void loopRobotStatusPublisher()
+{
+  if (!g_statusPublishPending) return;
+
+  g_statusPublishPending = false;
+
+  char eventCopy[32];
+  strncpy(eventCopy, g_pendingStatusEvent, sizeof(eventCopy) - 1);
+  eventCopy[sizeof(eventCopy) - 1] = '\0';
+
+  const bool force = isCriticalRobotStateEvent(eventCopy);
+
+  publishRobotState(eventCopy, force);
+}
+
 
 const char* getRobotActionState()
 {
