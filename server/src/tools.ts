@@ -1,8 +1,90 @@
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
-import { getRobotState, sendMipCommand, onRobotSensorEvent  } from "./robot_bridge";
+import { getRobotState, sendMipCommand, sendFaceCommand } from "./robot_bridge";
 
 const headLedModeSchema = z.number().int().min(0).max(3).describe("Head LED mode: 0 off, 1 on, 2 slow blink, 3 fast blink.");
+
+const faceExpressionSchema = z.enum(["bashful", "confused", "silly", "surprise", "thinking"]);
+
+export const robotSetFaceExpression = tool(
+  async ({ expression, duration_ms = 3000 }) =>
+    sendFaceCommand({ command: "expression", expression, duration_ms }),
+  {
+    name: "robot_set_face_expression",
+    description:
+      "Set the robot head facial expression using the portrait face sprites. Available expressions are bashful, confused, silly, surprise, and thinking. Use this for emotional reactions; it does not require the MiP body to be connected.",
+    schema: z.object({
+      expression: faceExpressionSchema,
+      duration_ms: z.number().int().min(250).max(30000).default(2500),
+    }),
+  }
+);
+
+export const robotClearFaceExpression = tool(
+  async () => sendFaceCommand({ command: "clear_expression" }),
+  {
+    name: "robot_clear_face_expression",
+    description:
+      "Return the robot face to its neutral/default expression and restore normal auto-blinking.",
+    schema: z.object({}),
+  }
+);
+
+export const robotBlink = tool(
+  async ({ fps = 28 }) => sendFaceCommand({ command: "blink", fps }),
+  {
+    name: "robot_blink",
+    description: "Trigger a single blink animation on the robot face.",
+    schema: z.object({
+      fps: z.number().int().min(4).max(60).default(28),
+    }),
+  }
+);
+
+export const robotLookLeft = tool(
+  async ({ hold = true, fps = 30 }) => sendFaceCommand({ command: "look_left", hold, fps }),
+  {
+    name: "robot_look_left",
+    description:
+      "Animate the robot face eyes looking left. Use hold=true to keep the eyes looking left until another face command changes them.",
+    schema: z.object({
+      hold: z.boolean().default(true),
+      fps: z.number().int().min(4).max(60).default(30),
+    }),
+  }
+);
+
+export const robotLookRight = tool(
+  async ({ hold = true, fps = 30 }) => sendFaceCommand({ command: "look_right", hold, fps }),
+  {
+    name: "robot_look_right",
+    description:
+      "Animate the robot face eyes looking right. Use hold=true to keep the eyes looking right until another face command changes them.",
+    schema: z.object({
+      hold: z.boolean().default(true),
+      fps: z.number().int().min(4).max(60).default(30),
+    }),
+  }
+);
+
+export const robotLookCenter = tool(
+  async () => sendFaceCommand({ command: "look_center" }),
+  {
+    name: "robot_look_center",
+    description: "Return the robot face eyes to center and restore normal auto-blinking.",
+    schema: z.object({}),
+  }
+);
+
+export const robotEyesSleep = tool(
+  async () => sendFaceCommand({ command: "sleep" }),
+  {
+    name: "robot_eyes_sleep",
+    description: "Close the robot face eyes and hold them closed, like a sleepy/resting expression.",
+    schema: z.object({}),
+  }
+);
+
 /*
 export const mipGetRobotState = tool(
   async () => JSON.stringify(getRobotState()),
@@ -413,6 +495,13 @@ export const mipSetClapDelay = tool(
 );
 
 export const TOOLS = [
+  robotSetFaceExpression,
+  robotClearFaceExpression,
+  robotBlink,
+  robotLookLeft,
+  robotLookRight,
+  robotLookCenter,
+  robotEyesSleep,
   mipGetRobotState,
   mipStop,
   mipStandUp,

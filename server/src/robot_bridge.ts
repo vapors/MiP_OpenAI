@@ -451,3 +451,20 @@ export function sendMipCommand(command: Record<string, unknown>) {
   return `Sent MiP command: ${String(command.command ?? "unknown")}`;
 }
 */
+export function sendFaceCommand(command: Record<string, unknown>) {
+  if (!isRobotConnected() || !currentDeviceSocket) {
+    console.warn("[FACE TOOL] Robot WebSocket is not connected");
+    return "Robot head/face is not connected.";
+  }
+
+  const payload = {
+    type: "face_command",
+    ...command,
+  };
+
+  const json = JSON.stringify(payload);
+  console.log("[FACE TOOL] TX", json);
+  currentDeviceSocket.send(json);
+
+  return `Sent face command: ${String(command.command ?? "unknown")}`;
+}

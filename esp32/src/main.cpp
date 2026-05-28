@@ -72,6 +72,8 @@ ButtonChecker button;
 #define MIP_RX_PIN 47
 #define MIP_TX_PIN 48
 
+#define ENABLE_FACE_IDLE_BEHAVIOR 0
+
 HardwareSerial MiPSerial(1);
 MiP MyMiP(MiPSerial, 2, 3);
 
@@ -91,7 +93,7 @@ Arduino_DataBus *bus = new Arduino_ESP32SPI(
 );
 
 Arduino_GFX *gfx = new Arduino_ST7796(
-  bus, LCD_RST /* RST */, 1 /* rotation */, true, LCD_HOR_RES, LCD_VER_RES
+  bus, LCD_RST /* RST */, 2 /* rotation */, true, LCD_HOR_RES, LCD_VER_RES
 );
 
 
@@ -259,8 +261,20 @@ void setup()
   delay(300);
 
 Serial.printf("[HEAP] internal free=%u\n", ESP.getFreeHeap());
-  startFaceTask();
-  delay(500);  
+
+
+
+startFaceTask();
+delay(500);
+
+face_enable_idle_behavior(ENABLE_FACE_IDLE_BEHAVIOR);
+
+if (!ENABLE_FACE_IDLE_BEHAVIOR)
+{
+  face_enable_auto_blink(true);
+  face_set_eye_anim(FaceAnim::EyeAnimId::Blink, FaceAnim::PlayMode::Loop, 28);
+}
+
   connectToWiFi();
   connectToWebSocket();
   delay(500);  
@@ -274,7 +288,6 @@ Serial.printf("[HEAP] internal free=%u\n", ESP.getFreeHeap());
 //  delay(4000);
  //face_eyes_sleep();          // hold closed (sleep)
  //delay(2000); 
-face_enable_auto_blink(true);
 // delay(2000); 
 //face_set_eye_anim(FaceAnim::EyeAnimId::LookLeft, FaceAnim::PlayMode::PingPong, 30);
 //delay(2000);

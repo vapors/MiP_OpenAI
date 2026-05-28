@@ -12,6 +12,18 @@ void face_set_eye_anim(FaceAnim::EyeAnimId id, FaceAnim::PlayMode mode, uint16_t
 void face_set_eye_frame(uint8_t frame);
 void face_enable_auto_blink(bool en);
 
+// Local idle personality. When enabled, the ESP occasionally chooses a small
+// face behavior on its own, then returns to neutral/open eyes + auto blink.
+void face_enable_idle_behavior(bool en);
+void face_trigger_random_idle_reaction();
+
+// Expression sprites: exp_eyes_*00 + exp_mouth_*00.
+// Expression mouth is held while idle, but normal talking mouth animation can override it.
+void face_set_expression(const char* expression, uint32_t duration_ms = 2500);
+void face_clear_expression();
+void face_blink_once(uint16_t fps = 28);
+void face_look_center();
+
 // Convenience helpers
 inline void face_eyes_blink()      { face_enable_auto_blink(true);  face_set_eye_anim(FaceAnim::EyeAnimId::Blink, FaceAnim::PlayMode::Loop, 28); }
 inline void face_eyes_blink_slowly()      { face_enable_auto_blink(false);  face_set_eye_anim(FaceAnim::EyeAnimId::Blink, FaceAnim::PlayMode::PingPong, 10); }

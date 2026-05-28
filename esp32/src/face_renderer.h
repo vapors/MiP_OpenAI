@@ -36,6 +36,14 @@ namespace FaceAnim {
     Open = 3,
     Closed = 4,
   };
+
+  enum class ExpressionId : uint8_t {
+    Bashful = 0,
+    Confused = 1,
+    Silly = 2,
+    Surprise = 3,
+    Thinking = 4,
+  };
 }
 
 class FaceRenderer {
@@ -115,6 +123,35 @@ public:
     }
     Serial.printf("[FACE] eye look_right sprites loaded (%d)\n", LOOK_FRAMES);
 
+    const char* expEyePaths[EXP_FRAMES] = {
+      "/exp_eyes_bashful00.png",
+      "/exp_eyes_confused00.png",
+      "/exp_eyes_silly00.png",
+      "/exp_eyes_surprise00.png",
+      "/exp_eyes_thinking00.png",
+    };
+
+    const char* expMouthPaths[EXP_FRAMES] = {
+      // Note: current uploaded filename uses bashfull with two l's.
+      "/exp_mouth_bashfull00.png",
+      "/exp_mouth_confused00.png",
+      "/exp_mouth_silly00.png",
+      "/exp_mouth_surprise00.png",
+      "/exp_mouth_thinking00.png",
+    };
+
+    for (int i = 0; i < EXP_FRAMES; ++i) {
+      if (!loadPNG_Sprite(expEyePaths[i], _expEyes[i])) {
+        Serial.printf("[FACE] Failed to load %s\n", expEyePaths[i]);
+        return false;
+      }
+      if (!loadPNG_Sprite(expMouthPaths[i], _expMouth[i])) {
+        Serial.printf("[FACE] Failed to load %s\n", expMouthPaths[i]);
+        return false;
+      }
+    }
+    Serial.printf("[FACE] expression sprites loaded (%d)\n", EXP_FRAMES);
+
     // First draw (eyes first, then mouth on top)
     drawBackgroundFull();
     drawEyesFrameRaw(_eyesBlink[0]);  // open
@@ -159,16 +196,63 @@ public:
 
   void enableAutoBlink(bool en) { _autoBlinkEnabled = en; }
 
+  void setExpression(FaceAnim::ExpressionId id, uint32_t duration_ms = 2500) {
+    const uint8_t idx = (uint8_t)id;
+    if (idx >= EXP_FRAMES) return;
+
+    _expressionActive = true;
+    _expressionId = idx;
+    _expressionUntilMs = duration_ms > 0 ? millis() + duration_ms : 0;
+    _expressionMouthVisible = false;
+
+    // Expression eyes are held as a static pose; normal mouth animation can still
+    // override the expression mouth while assistant audio is speaking.
+    _autoBlinkEnabled = false;
+    _eyeState.playing = false;
+    drawEyesFrameRaw(_expEyes[_expressionId]);
+    drawExpressionMouth();
+  }
+
+  void clearExpression() {
+    _expressionActive = false;
+    _expressionUntilMs = 0;
+    _expressionMouthVisible = false;
+    _autoBlinkEnabled = true;
+    setEyeAnim(FaceAnim::EyeAnimId::Open, FaceAnim::PlayMode::OnceHold, 1, 0);
+    drawMouthFrame(0);
+    _lastMouth = 0;
+  }
+
   // Call at ~30–60Hz from face_task.
   // mouthLevel0to255 typically derived from speaker audio envelope.
   void tick(uint8_t mouthLevel0to255) {
-    tickEyes();
+    const uint32_t now = millis();
 
-    // Draw mouth last so it stays "in front" if regions overlap
+    if (_expressionActive && _expressionUntilMs != 0 && (int32_t)(now - _expressionUntilMs) >= 0) {
+      clearExpression();
+    }
+
+    if (!_expressionActive) {
+      tickEyes();
+    }
+
+    // Draw mouth last so it stays "in front" if regions overlap.
+    // During an expression, speaker audio mouth frames temporarily override the
+    // static expression mouth. When speaking stops, return to the expression mouth.
+    const bool speaking = mouthLevel0to255 > 8;
+
+    if (_expressionActive && !speaking) {
+      if (!_expressionMouthVisible) {
+        drawExpressionMouth();
+      }
+      return;
+    }
+
     const uint8_t m = (uint8_t)min<int>(MOUTH_FRAMES - 1, (mouthLevel0to255 * MOUTH_FRAMES) / 256);
-    if (m != _lastMouth) {
+    if (m != _lastMouth || _expressionMouthVisible) {
       drawMouthFrame(m);
       _lastMouth = m;
+      _expressionMouthVisible = false;
     }
   }
 
@@ -181,6 +265,7 @@ private:
   static constexpr int EYE_FRAMES   = 6;   // eyes_blink0..5
   static constexpr int LOOK_FRAMES  = 6;   // look_left00..05, look_right00..05
   static constexpr int MOUTH_FRAMES = 11;  // mouth00..mouth10
+  static constexpr int EXP_FRAMES   = 5;   // bashful, confused, silly, surprise, thinking
 
   Arduino_GFX* _gfx = nullptr;
 
@@ -193,15 +278,22 @@ private:
   CachedSprite _eyesBlink[EYE_FRAMES];
   CachedSprite _eyesLeft[LOOK_FRAMES];
   CachedSprite _eyesRight[LOOK_FRAMES];
+  CachedSprite _expEyes[EXP_FRAMES];
+  CachedSprite _expMouth[EXP_FRAMES];
 
   // Anchor defaults (tweak in face_task)
-  int _eyesScreenX  = 240, _eyesScreenY  = 110;
-  int _eyesAnchorX  = 185, _eyesAnchorY  = 90;
+  int _eyesScreenX  = 240, _eyesScreenY  = 202;
+  int _eyesAnchorX  = 120, _eyesAnchorY  = 90;
 
   int _mouthScreenX = 240, _mouthScreenY = 211;
   int _mouthAnchorX = 150, _mouthAnchorY = 90;
 
   uint8_t _lastMouth = 255;
+
+  bool _expressionActive = false;
+  uint8_t _expressionId = 0;
+  uint32_t _expressionUntilMs = 0;
+  bool _expressionMouthVisible = false;
 
   // --- Eye animation state ---
   struct EyeAnimState {
@@ -387,6 +479,19 @@ private:
       _mouth[idx].w,
       _mouth[idx].h
     );
+  }
+
+  void drawExpressionMouth() {
+    if (!_gfx || _expressionId >= EXP_FRAMES || !_expMouth[_expressionId].ok()) return;
+    _gfx->draw16bitRGBBitmapWithMask(
+      mouthRectX(), mouthRectY(),
+      _expMouth[_expressionId].rgb565,
+      _expMouth[_expressionId].mask,
+      _expMouth[_expressionId].w,
+      _expMouth[_expressionId].h
+    );
+    _expressionMouthVisible = true;
+    _lastMouth = 255;
   }
 
   void drawEyesFrameRaw(const CachedSprite& s) {

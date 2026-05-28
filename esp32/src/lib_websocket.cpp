@@ -13,6 +13,7 @@
 #include "vad_controller.h"
 #include "speaker_audio_queue.h"
 #include "ble_control.h"
+#include "face_task.h"
 
 using namespace websockets;
 
@@ -411,6 +412,81 @@ void handleMipCommand(const String& text)
 
   const char* type = doc["type"] | "";
   const char* command = doc["command"] | "";
+
+  if (strcmp(type, "face_command") == 0)
+  {
+    Serial.print("[FACE COMMAND] ");
+    Serial.println(command);
+
+    if (strcmp(command, "expression") == 0)
+    {
+      const char* expression = doc["expression"] | "";
+      uint32_t durationMs = doc["duration_ms"] | 2500;
+      face_set_expression(expression, durationMs);
+      publishRobotState("face_expression", true);
+      return;
+    }
+
+    if (strcmp(command, "clear_expression") == 0 || strcmp(command, "neutral") == 0)
+    {
+      face_clear_expression();
+      publishRobotState("face_neutral", true);
+      return;
+    }
+
+    if (strcmp(command, "blink") == 0)
+    {
+      uint16_t fps = doc["fps"] | 28;
+      face_blink_once(fps);
+      publishRobotState("face_blink", true);
+      return;
+    }
+
+    if (strcmp(command, "look_left") == 0)
+    {
+      uint16_t fps = doc["fps"] | 30;
+      bool hold = doc["hold"] | true;
+      face_enable_auto_blink(false);
+      face_set_eye_anim(FaceAnim::EyeAnimId::LookLeft,
+                        hold ? FaceAnim::PlayMode::OnceHold : FaceAnim::PlayMode::Once,
+                        fps,
+                        hold ? 5 : -1);
+      publishRobotState("face_look_left", true);
+      return;
+    }
+
+    if (strcmp(command, "look_right") == 0)
+    {
+      uint16_t fps = doc["fps"] | 30;
+      bool hold = doc["hold"] | true;
+      face_enable_auto_blink(false);
+      face_set_eye_anim(FaceAnim::EyeAnimId::LookRight,
+                        hold ? FaceAnim::PlayMode::OnceHold : FaceAnim::PlayMode::Once,
+                        fps,
+                        hold ? 5 : -1);
+      publishRobotState("face_look_right", true);
+      return;
+    }
+
+    if (strcmp(command, "look_center") == 0)
+    {
+      face_look_center();
+      publishRobotState("face_look_center", true);
+      return;
+    }
+
+    if (strcmp(command, "sleep") == 0 || strcmp(command, "eyes_closed") == 0)
+    {
+      face_eyes_sleep();
+      publishRobotState("face_sleep", true);
+      return;
+    }
+
+    Serial.print("[FACE COMMAND UNKNOWN] ");
+    Serial.println(text);
+    publishRobotState("face_command_unknown", true);
+    return;
+  }
 
   if (strcmp(type, "mip_command") != 0)
   {
